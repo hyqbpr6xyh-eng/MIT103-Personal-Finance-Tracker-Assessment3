@@ -1,10 +1,14 @@
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <functional>
 using namespace std;
 
 const int MAX_TRANSACTIONS = 100;
+const int MAX_USERS = 10;
 
-// Transaction class (Part 5 of the assessment)
+
+// Transaction Class (same as base code) 
 class Transaction {
 private:
     string date;
@@ -13,7 +17,6 @@ private:
     float amount;
 
 public:
-
     Transaction() {
         date = "";
         category = "";
@@ -24,56 +27,79 @@ public:
     Transaction(string d, string c, string desc, float a) {
         date = d;
         category = c;
-        description = desc; 
-        amount = a;
-    }
-
-    string getDate() {
-        return date;
-    }
-
-    string getCategory() {
-        return category;
-    }
-
-    string getDescription() {
-        return description;
-    }
-
-    float getAmount() {
-        return amount;
-    }
-
-    void setDate(string d) {
-        date = d;
-    }
-
-    void setCategory(string c) {
-        category = c;
-    }
-
-    void setDescription(string desc) {
         description = desc;
-    }
-
-    void setAmount(float a) {
         amount = a;
     }
+
+    string getDate() { return date; }
+    string getCategory() { return category; }
+    string getDescription() { return description; }
+    float getAmount() { return amount; }
+
+    void setDate(string d) { date = d; }
+    void setCategory(string c) { category = c; }
+    void setDescription(string desc) { description = desc; }
+    void setAmount(float a) { amount = a; }
 };
 
-// Function prototypes (Part 4 of assessment) 
+
+// ===== User Struct for Authentication =====
+struct User {
+    string username;
+    string passwordHash;
+    string role;   // admin or user
+};
+
+
+// Function Prototypes 
 void showMenu();
 int getValidMenuChoice(int min, int max);
+
 void addTransaction(Transaction arr[], int &count);
 void deleteTransaction(Transaction arr[], int &count);
 void displayTransactions(Transaction arr[], int count);
 void sortTransactions(Transaction arr[], int count);
 void searchTransaction(Transaction arr[], int count);
 
+// Authentication
+void initUsers(User users[], int &userCount);
+User* login(User users[], int userCount);
+string hashPassword(const string &password);
 
-// main
+
+//  MAIN 
 int main() {
-    
+
+    // === Load users + login ===
+    User users[MAX_USERS];
+    int userCount = 0;
+    initUsers(users, userCount);
+
+    User* currentUser = NULL;
+    int attempts = 0;
+
+    cout << "Welcome to Personal Finance Tracker (Auth Version)\n";
+
+    while (attempts < 3 && currentUser == NULL) {
+        currentUser = login(users, userCount);
+        if (currentUser == NULL) {
+            attempts++;
+            cout << "Login failed. Attempts left: " << (3 - attempts) << "\n";
+        }
+    }
+
+    if (currentUser == NULL) {
+        cout << "Too many failed login attempts. Exiting program.\n";
+        return 0;
+    }
+
+    bool isAdmin = (currentUser->role == "admin");
+
+    cout << "Logged in as: " << currentUser->username
+         << " (role: " << currentUser->role << ")\n";
+
+
+    //  Original Assessment 2 Program Starts Here 
     Transaction transactions[MAX_TRANSACTIONS];
     int transactionCount = 0;
     int choice;
@@ -90,7 +116,11 @@ int main() {
                 break;
 
             case 2:
-                deleteTransaction(transactions, transactionCount);
+                if (!isAdmin) {
+                    cout << "Only admins can delete transactions.\n";
+                } else {
+                    deleteTransaction(transactions, transactionCount);
+                }
                 break;
 
             case 3:
@@ -116,11 +146,12 @@ int main() {
 }
 
 
-// Menu + input validation (Part 1, 6) 
+
+//  Menu + Validation 
 void showMenu() {
     cout << "\n==== Personal Finance Tracker ====\n";
     cout << "1 - Add new transaction\n";
-    cout << "2 - Delete a transaction\n";
+    cout << "2 - Delete a transaction (admin only)\n";
     cout << "3 - Search for a transaction\n";
     cout << "4 - Display all transactions (sorted by amount)\n";
     cout << "5 - Exit\n";
@@ -136,14 +167,69 @@ int getValidMenuChoice(int min, int max) {
         cin.clear();
         cin.ignore(1000, '\n');
         cout << "Invalid input. Please enter a number between "
-            << min << " and " << max << ": ";
+             << min << " and " << max << ": ";
         cin >> choice;
     }
+
+    cin.ignore(1000, '\n');
     return choice;
 }
 
 
-// Add transaction (Part 2, 4, 5, 6)
+
+// AUTHENTICATION FUNCTIONS 
+
+string hashPassword(const string &password) {
+    hash<string> hasher;
+    size_t h = hasher(password);
+    stringstream ss;
+    ss << h;
+    return ss.str();
+}
+
+void initUsers(User users[], int &userCount) {
+    userCount = 0;
+
+    // Admin
+    users[userCount].username = "admin";
+    users[userCount].passwordHash = hashPassword("admin123");
+    users[userCount].role = "admin";
+    userCount++;
+
+    // Regular user
+    users[userCount].username = "user";
+    users[userCount].passwordHash = hashPassword("user123");
+    users[userCount].role = "user";
+    userCount++;
+}
+
+User* login(User users[], int userCount) {
+
+    string uname, pwd;
+
+    cout << "\n--- Login ---\n";
+    cout << "Username: ";
+    cin >> uname;
+
+    cout << "Password: ";
+    cin >> pwd;
+
+    string hashed = hashPassword(pwd);
+
+    for (int i = 0; i < userCount; i++) {
+        if (users[i].username == uname && users[i].passwordHash == hashed) {
+            return &users[i];
+        }
+    }
+
+    return NULL;
+}
+
+
+
+// Original Assessment 2 Functionalities 
+
+// Add transaction
 void addTransaction(Transaction arr[], int &count) {
 
     if (count >= MAX_TRANSACTIONS) {
@@ -161,7 +247,7 @@ void addTransaction(Transaction arr[], int &count) {
     cout << "Enter category (e.g. Food, Rent, Transport): ";
     cin >> category;
 
-    cin.ignore(); // leftover newline
+    cin.ignore();
 
     cout << "Enter description: ";
     getline(cin, description);
@@ -184,7 +270,7 @@ void addTransaction(Transaction arr[], int &count) {
 }
 
 
-// Delete transaction (Part 2, 4)
+// Delete transaction
 void deleteTransaction(Transaction arr[], int &count) {
 
     if (count == 0) {
@@ -214,7 +300,7 @@ void deleteTransaction(Transaction arr[], int &count) {
 }
 
 
-// Display transactions (Part 2, 4)
+// Display
 void displayTransactions(Transaction arr[], int count) {
 
     if (count == 0) {
@@ -235,15 +321,14 @@ void displayTransactions(Transaction arr[], int count) {
 }
 
 
-// Sorting (Bubble sort) (Part 3)
+// Sort (bubble)
 void sortTransactions(Transaction arr[], int count) {
 
     if (count <= 1) return;
 
-    for (int i = 0; i < count - 1; i++) 
-    {
-        for (int j = 0; j < count - 1 - i; j++) 
-        {
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - 1 - i; j++) {
+
             if (arr[j].getAmount() > arr[j + 1].getAmount()) {
                 Transaction temp = arr[j];
                 arr[j] = arr[j + 1];
@@ -256,7 +341,7 @@ void sortTransactions(Transaction arr[], int count) {
 }
 
 
-// Searching (Linear search) (Part 3)
+// Search
 void searchTransaction(Transaction arr[], int count) {
 
     if (count == 0) {
