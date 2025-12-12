@@ -1,16 +1,18 @@
 #include <iostream>
 #include <string>
+#include <fstream>
 #include <sstream>
 #include <functional>
-#include <fstream>
+#include <stdexcept>
+
 using namespace std;
 
-const int MAX_TRANSACTIONS = 100;
-const int MAX_USERS = 10;
-const string ENCRYPTION_KEY = "mySecretKey123";
+const int MAX_RECENT = 10;   // I just put 10 because that seemed reasonable
+const int MAX_USERS = 10;    // not expecting more users 
+const string ENCRYPTION_KEY = "mySecretKey123";  // just a simple key for XOR (not real security haha)
 
 
-//  Transaction Class (same as base code) 
+//Transaction class (from Assessment 2, reused) 
 class Transaction {
 private:
     string date;
@@ -19,6 +21,8 @@ private:
     float amount;
 
 public:
+
+    // default constructor
     Transaction() {
         date = "";
         category = "";
@@ -26,6 +30,7 @@ public:
         amount = 0.0;
     }
 
+    // constructor with params
     Transaction(string d, string c, string desc, float a) {
         date = d;
         category = c;
@@ -33,11 +38,13 @@ public:
         amount = a;
     }
 
+    // getters
     string getDate() { return date; }
     string getCategory() { return category; }
     string getDescription() { return description; }
     float getAmount() { return amount; }
 
+    // setters (I didn’t really use these much but keeping them )
     void setDate(string d) { date = d; }
     void setCategory(string c) { category = c; }
     void setDescription(string desc) { description = desc; }
@@ -45,48 +52,64 @@ public:
 };
 
 
-//  User Struct for Authentication 
+// User and Data Structures for Assessment 3 
 struct User {
     string username;
     string passwordHash;
-    string role;   // admin or user
+    string role; // "admin" or "user" 
+};
+
+struct Node {   // linked list node
+    Transaction data;
+    Node *next;
+};
+
+// stack to store recent transactions
+struct RecentStack {
+    Transaction arr[MAX_RECENT];
+    int top;
 };
 
 
-//  Function Prototypes 
-void showMenu();
+//Function Prototypes 
+
+void showMenu(bool isAdmin);
 int getValidMenuChoice(int min, int max);
 
-void addTransaction(Transaction arr[], int &count);
-void deleteTransaction(Transaction arr[], int &count);
-void displayTransactions(Transaction arr[], int count);
-void sortTransactions(Transaction arr[], int count);
-void searchTransaction(Transaction arr[], int count);
+string hashPassword(const string &password);
+string encryptDecrypt(const string &text, const string &key);
 
-// Authentication
 void initUsers(User users[], int &userCount);
 User* login(User users[], int userCount);
-string hashPassword(const string &password);
 
-// File handling
-string encryptDecrypt(const string &text, const string &key);
-void saveTransactionsToFile(Transaction arr[], int count);
-void loadTransactionsFromFile(Transaction arr[], int &count);
+void addTransaction(Node* &head, int &count, RecentStack &recent);
+void deleteTransaction(Node* &head, int &count);
+void displayTransactions(Node* head);
+void sortTransactions(Node* head);
+void searchTransaction(Node* head);
+
+void pushRecent(RecentStack &stack, const Transaction &t);
+void showRecent(RecentStack &stack);
+
+void saveTransactionsToFile(Node* head);
+void loadTransactionsFromFile(Node* &head, int &count, RecentStack &recent);
 
 
-//  MAIN 
+// MAIN 
 int main() {
 
-    // === Load users + login ===
+    // loading user data + login
     User users[MAX_USERS];
     int userCount = 0;
+
     initUsers(users, userCount);
 
-    User* currentUser = NULL;
+    User *currentUser = NULL;
+
+    cout << "Welcome to Personal Finance Tracker (Secure Version)\n";
+
     int attempts = 0;
-
-    cout << "Welcome to Personal Finance Tracker (Auth + File Version)\n";
-
+    // retry system
     while (attempts < 3 && currentUser == NULL) {
         currentUser = login(users, userCount);
         if (currentUser == NULL) {
@@ -97,134 +120,192 @@ int main() {
 
     if (currentUser == NULL) {
         cout << "Too many failed login attempts. Exiting program.\n";
-        return 0;
+        return 0;   // I just stop the program here
     }
 
     bool isAdmin = (currentUser->role == "admin");
 
     cout << "Logged in as: " << currentUser->username
-         << " (role: " << currentUser->role << ")\n";
+         << "  (role: " << currentUser->role << ")\n";
 
-
-    //  Transactions (array-based, with file persistence) 
-    Transaction transactions[MAX_TRANSACTIONS];
+    // linked list start
+    Node *head = NULL;
     int transactionCount = 0;
+    RecentStack recent;
+    recent.top = -1;  // empty
 
-    loadTransactionsFromFile(transactions, transactionCount);
+    loadTransactionsFromFile(head, transactionCount, recent);
 
     int choice;
 
-    do 
-    {
-        showMenu();
-        choice = getValidMenuChoice(1, 5);
+    do {
+        showMenu(isAdmin);
+        choice = getValidMenuChoice(1, 6);
 
-        switch (choice) 
-        {
+        switch (choice) {
             case 1:
-                addTransaction(transactions, transactionCount);
-                saveTransactionsToFile(transactions, transactionCount);
+                addTransaction(head, transactionCount, recent);
+                saveTransactionsToFile(head);  // save immediately
                 break;
 
             case 2:
                 if (!isAdmin) {
-                    cout << "Only admins can delete transactions.\n";
+                    cout << "Only admins are allowed to delete transactions.\n";
                 } else {
-                    deleteTransaction(transactions, transactionCount);
-                    saveTransactionsToFile(transactions, transactionCount);
+                    deleteTransaction(head, transactionCount);
+                    saveTransactionsToFile(head);
                 }
                 break;
 
             case 3:
-                searchTransaction(transactions, transactionCount);
+                searchTransaction(head);
                 break;
 
             case 4:
-                sortTransactions(transactions, transactionCount);
-                displayTransactions(transactions, transactionCount);
+                sortTransactions(head); // bubble sort - slow but okay
+                displayTransactions(head);
                 break;
 
             case 5:
-                cout << "Exiting program..." << endl;
+                showRecent(recent);
+                break;
+
+            case 6:
+                cout << "Exiting program...\n";
                 break;
 
             default:
-                cout << "Invalid choice." << endl;
+                cout << "Invalid choice\n";
         }
 
-    } while (choice != 5);
+    } while (choice != 6);
 
     return 0;
 }
 
 
+//Helper Functions 
 
-//  Menu + Validation
-void showMenu() {
+void showMenu(bool isAdmin) {
+
+    // menu is same as assessment 2 but updated
     cout << "\n==== Personal Finance Tracker ====\n";
     cout << "1 - Add new transaction\n";
     cout << "2 - Delete a transaction (admin only)\n";
     cout << "3 - Search for a transaction\n";
     cout << "4 - Display all transactions (sorted by amount)\n";
-    cout << "5 - Exit\n";
+    cout << "5 - Show recent transactions (stack)\n";
+    cout << "6 - Exit\n";
     cout << "Enter your choice: ";
 }
 
+
+// input validation
 int getValidMenuChoice(int min, int max) {
     int choice;
     cin >> choice;
 
-    while (cin.fail() || choice < min || choice > max) 
-    {
+    while (cin.fail() || choice < min || choice > max) {
+
         cin.clear();
         cin.ignore(1000, '\n');
+
         cout << "Invalid input. Please enter a number between "
              << min << " and " << max << ": ";
+
         cin >> choice;
     }
 
-    cin.ignore(1000, '\n');
+    cin.ignore(1000, '\n'); // forgot this earlier once and it broke getline
     return choice;
 }
 
 
-
-//  AUTHENTICATION FUNCTIONS 
-
+// basic password hashing (not real encryption)
 string hashPassword(const string &password) {
-    hash<string> hasher;
+    std::hash<string> hasher;
     size_t h = hasher(password);
     stringstream ss;
     ss << h;
     return ss.str();
 }
 
+
+// XOR encryption / decryption
+string encryptDecrypt(const string &text, const string &key) {
+
+    string result = text;
+
+    for (size_t i = 0; i < text.size(); i++) {
+        result[i] = text[i] ^ key[i % key.size()];
+    }
+
+    return result;
+}
+
+
+// Authentication 
+
 void initUsers(User users[], int &userCount) {
+
     userCount = 0;
 
-    // Admin
-    users[userCount].username = "admin";
-    users[userCount].passwordHash = hashPassword("admin123");
-    users[userCount].role = "admin";
-    userCount++;
+    ifstream infile("users.txt");
 
-    // Regular user
-    users[userCount].username = "user";
-    users[userCount].passwordHash = hashPassword("user123");
-    users[userCount].role = "user";
-    userCount++;
+    if (!infile) {
+        // create admin if no file
+        ofstream outfile("users.txt");
+
+        string defaultUser = "admin";
+        string defaultPass = "admin123";
+
+        string hash = hashPassword(defaultPass);
+
+        outfile << defaultUser << "|" << hash << "|admin\n";
+        outfile.close();
+
+        cout << "Default admin created (username: admin, password: admin123)\n";
+
+        infile.open("users.txt");
+    }
+
+    string line;
+
+    // reading users file
+    while (getline(infile, line) && userCount < MAX_USERS) {
+
+        if (line.size() == 0) continue;
+
+        stringstream ss(line);
+        string u, h, r;
+
+        getline(ss, u, '|');
+        getline(ss, h, '|');
+        getline(ss, r, '|');
+
+        users[userCount].username = u;
+        users[userCount].passwordHash = h;
+        users[userCount].role = r;
+
+        userCount++;
+    }
+
+    infile.close();
 }
+
 
 User* login(User users[], int userCount) {
 
+    // normal login function
     string uname, pwd;
 
     cout << "\n--- Login ---\n";
+
     cout << "Username: ";
-    cin >> uname;
+    getline(cin, uname);
 
     cout << "Password: ";
-    cin >> pwd;
+    getline(cin, pwd);
 
     string hashed = hashPassword(pwd);
 
@@ -238,120 +319,66 @@ User* login(User users[], int userCount) {
 }
 
 
+//Recent Stack 
+void pushRecent(RecentStack &stack, const Transaction &t) {
 
-//  FILE HANDLING FUNCTIONS 
-
-string encryptDecrypt(const string &text, const string &key) {
-
-    string result = text;
-
-    for (size_t i = 0; i < text.size(); i++) {
-        result[i] = text[i] ^ key[i % key.size()];
-    }
-
-    return result;
-}
-
-void saveTransactionsToFile(Transaction arr[], int count) {
-
-    ofstream outfile("transactions.txt");
-
-    if (!outfile) {
-        cout << "Error opening transactions.txt for writing.\n";
-        return;
-    }
-
-    for (int i = 0; i < count; i++) {
-
-        stringstream ss;
-        ss << arr[i].getAmount();
-
-        string line = arr[i].getDate() + "|" +
-                      arr[i].getCategory() + "|" +
-                      arr[i].getDescription() + "|" +
-                      ss.str();
-
-        string encrypted = encryptDecrypt(line, ENCRYPTION_KEY);
-
-        outfile << encrypted << "\n";
-    }
-
-    outfile.close();
-}
-
-void loadTransactionsFromFile(Transaction arr[], int &count) {
-
-    ifstream infile("transactions.txt");
-
-    if (!infile) {
-        cout << "No existing transactions file found. Starting empty.\n";
-        return;
-    }
-
-    string line;
-
-    while (getline(infile, line) && count < MAX_TRANSACTIONS) {
-
-        if (line.size() == 0) continue;
-
-        string decrypted = encryptDecrypt(line, ENCRYPTION_KEY);
-
-        stringstream ss(decrypted);
-
-        string d, c, desc, amountStr;
-
-        getline(ss, d, '|');
-        getline(ss, c, '|');
-        getline(ss, desc, '|');
-        getline(ss, amountStr, '|');
-
-        float amount = 0;
-
-        try {
-            amount = stof(amountStr);
-        } catch (...) {
-            cout << "Skipping invalid transaction line in file.\n";
-            continue;
+    // pushing like a normal stack
+    if (stack.top < MAX_RECENT - 1) {
+        stack.top++;
+        stack.arr[stack.top] = t;
+    } else {
+        // stack full, shift everything down
+        for (int i = 0; i < MAX_RECENT - 1; i++) {
+            stack.arr[i] = stack.arr[i + 1];
         }
-
-        Transaction t(d, c, desc, amount);
-
-        arr[count] = t;
-        count++;
+        // put newest at top
+        stack.arr[MAX_RECENT - 1] = t;
     }
-
-    infile.close();
 }
 
 
+// print recent transactions
+void showRecent(RecentStack &stack) {
 
-// Original Assessment 2 Functionalities (array-based) 
-
-// Add transaction
-void addTransaction(Transaction arr[], int &count) {
-
-    if (count >= MAX_TRANSACTIONS) {
-        cout << "Transaction list is full. Cannot add more.\n";
+    if (stack.top < 0) {
+        cout << "No recent transactions.\n";
         return;
     }
 
-    string date, category, description;
-    string amountText;
+    cout << "\n--- Recent Transactions (most recent first) ---\n";
+
+    // printing backwards like stack
+    for (int i = stack.top; i >= 0; i--) {
+
+        cout << (stack.top - i + 1)
+             << ". Date: " << stack.arr[i].getDate()
+             << ", Category: " << stack.arr[i].getCategory()
+             << ", Description: " << stack.arr[i].getDescription()
+             << ", Amount: " << stack.arr[i].getAmount() << endl;
+    }
+}
+
+
+//Linked List Operations 
+
+// add transaction to list
+void addTransaction(Node* &head, int &count, RecentStack &recent) {
+
+    string date, cat, desc, amountText;
     float amount;
 
+    // basic user input prompts
     cout << "Enter date (DD/MM/YYYY): ";
-    cin >> date;
+    getline(cin, date);
 
     cout << "Enter category (e.g. Food, Rent, Transport): ";
-    cin >> category;
-
-    cin.ignore();
+    getline(cin, cat);
 
     cout << "Enter description: ";
-    getline(cin, description);
+    getline(cin, desc);
 
     cout << "Enter amount (positive for income, negative for expense): ";
-    cin >> amountText;
+    getline(cin, amountText);
 
     try {
         amount = stof(amountText);
@@ -360,127 +387,308 @@ void addTransaction(Transaction arr[], int &count) {
         return;
     }
 
-    Transaction t(date, category, description, amount);
-    arr[count] = t;
+    Transaction t(date, cat, desc, amount);
+
+    Node *newNode = new Node;
+    newNode->data = t;
+    newNode->next = NULL;
+
+    if (head == NULL) {
+        head = newNode;
+    } else {
+        Node *temp = head;
+
+        // just go to end of list
+        while (temp->next != NULL) {
+            temp = temp->next;
+        }
+
+        temp->next = newNode;
+    }
+
     count++;
+
+    pushRecent(recent, t); // keep stack updated
 
     cout << "Transaction added successfully.\n";
 }
 
 
-// Delete transaction
-void deleteTransaction(Transaction arr[], int &count) {
+// delete by index
+void deleteTransaction(Node* &head, int &count) {
 
-    if (count == 0) {
+    if (head == NULL || count == 0) {
         cout << "No transactions to delete.\n";
         return;
     }
 
-    displayTransactions(arr, count);
+    displayTransactions(head);
 
     int index;
+
     cout << "Enter the transaction number to delete (1 to " << count << "): ";
     cin >> index;
 
     while (cin.fail() || index < 1 || index > count) {
+
         cin.clear();
         cin.ignore(1000, '\n');
+
         cout << "Invalid number. Enter again (1 to " << count << "): ";
         cin >> index;
     }
 
-    for (int i = index - 1; i < count - 1; i++) {
-        arr[i] = arr[i + 1];
+    cin.ignore(1000, '\n');
+
+    if (index == 1) {
+        Node *temp = head;
+        head = head->next;
+        delete temp;
+    } else {
+
+        Node *prev = head;
+
+        for (int i = 1; i < index - 1; i++) {
+            prev = prev->next;
+        }
+
+        Node *toDelete = prev->next;
+        prev->next = toDelete->next;
+
+        delete toDelete;
     }
 
     count--;
+
     cout << "Transaction deleted.\n";
 }
 
 
-// Display
-void displayTransactions(Transaction arr[], int count) {
+// print everything
+void displayTransactions(Node* head) {
 
-    if (count == 0) {
+    if (head == NULL) {
         cout << "No transactions recorded.\n";
         return;
     }
 
     cout << "\n---- All Transactions ----\n";
 
-    for (int i = 0; i < count; i++) {
+    Node *temp = head;
+    int i = 1;
 
-        cout << (i + 1) << ". Date: " << arr[i].getDate()
-             << ", Category: " << arr[i].getCategory()
-             << ", Description: " << arr[i].getDescription()
-             << ", Amount: " << arr[i].getAmount() 
-             << endl;
+    while (temp != NULL) {
+
+        cout << i << ". Date: " << temp->data.getDate()
+             << ", Category: " << temp->data.getCategory()
+             << ", Description: " << temp->data.getDescription()
+             << ", Amount: " << temp->data.getAmount() << endl;
+
+        temp = temp->next;
+        i++;
     }
 }
 
 
-// Sort (bubble)
-void sortTransactions(Transaction arr[], int count) {
+// bubble sort (very slow but fine for small lists)
+void sortTransactions(Node* head) {
 
-    if (count <= 1) return;
+    if (head == NULL || head->next == NULL) return;
 
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = 0; j < count - 1 - i; j++) {
+    bool swapped;
 
-            if (arr[j].getAmount() > arr[j + 1].getAmount()) {
-                Transaction temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
+    do {
+        swapped = false;
+
+        Node *cur = head;
+
+        while (cur->next != NULL) {
+
+            if (cur->data.getAmount() > cur->next->data.getAmount()) {
+                Transaction tmp = cur->data;
+                cur->data = cur->next->data;
+                cur->next->data = tmp;
+
+                swapped = true;
             }
+
+            cur = cur->next;
         }
-    }
+
+    } while (swapped);
 
     cout << "Transactions have been sorted by amount.\n";
 }
 
 
-// Search
-void searchTransaction(Transaction arr[], int count) {
+// search by date or category
+void searchTransaction(Node* head) {
 
-    if (count == 0) {
+    if (head == NULL) {
         cout << "No transactions to search.\n";
         return;
     }
 
-    int option;
-    cout << "Search by:\n1 - Date\n2 - Category\nEnter option: ";
-    cin >> option;
+    int opt;
 
-    while (cin.fail() || (option != 1 && option != 2)) {
+    cout << "Search by:\n1 - Date\n2 - Category\nEnter option: ";
+    cin >> opt;
+
+    while (cin.fail() || (opt != 1 && opt != 2)) {
+
         cin.clear();
         cin.ignore(1000, '\n');
+
         cout << "Invalid choice. Enter 1 or 2: ";
-        cin >> option;
+        cin >> opt;
     }
 
+    cin.ignore(1000, '\n');
+
     string key;
+
     cout << "Enter search value: ";
-    cin >> key;
+    getline(cin, key);
 
     bool found = false;
 
     cout << "\nSearch results:\n";
 
-    for (int i = 0; i < count; i++) {
-        if ((option == 1 && arr[i].getDate() == key) ||
-            (option == 2 && arr[i].getCategory() == key)) {
+    Node *temp = head;
+    int i = 1;
 
-            cout << (i + 1) << ". Date: " << arr[i].getDate()
-                 << ", Category: " << arr[i].getCategory()
-                 << ", Description: " << arr[i].getDescription()
-                 << ", Amount: " << arr[i].getAmount()
-                 << endl;
+    while (temp != NULL) {
 
+        bool match = false;
+
+        if (opt == 1 && temp->data.getDate() == key) {
+            match = true;
+        } else if (opt == 2 && temp->data.getCategory() == key) {
+            match = true;
+        }
+
+        if (match) {
+            cout << i << ". Date: " << temp->data.getDate()
+                 << ", Category: " << temp->data.getCategory()
+                 << ", Description: " << temp->data.getDescription()
+                 << ", Amount: " << temp->data.getAmount() << endl;
             found = true;
         }
+
+        temp = temp->next;
+        i++;
     }
 
     if (!found) {
         cout << "No matching transactions found.\n";
+    }
+}
+
+
+
+//File Handling + Encryption 
+
+// save everything to file
+void saveTransactionsToFile(Node* head) {
+
+    ofstream outfile("transactions.txt");
+
+    if (!outfile) {
+        cout << "Error opening transactions.txt for writing.\n";
+        return;
+    }
+
+    try {
+
+        Node *temp = head;
+
+        while (temp != NULL) {
+
+            stringstream ss;
+            ss << temp->data.getAmount();
+
+            string line = temp->data.getDate() + "|" +
+                          temp->data.getCategory() + "|" +
+                          temp->data.getDescription() + "|" +
+                          ss.str();
+
+            string encrypted = encryptDecrypt(line, ENCRYPTION_KEY);
+
+            outfile << encrypted << "\n";
+
+            temp = temp->next;
+        }
+
+        outfile.close();
+
+    } catch (exception &e) {
+        cout << "Error saving transactions: " << e.what() << endl;
+    }
+}
+
+
+
+// load saved data
+void loadTransactionsFromFile(Node* &head, int &count, RecentStack &recent) {
+
+    ifstream infile("transactions.txt");
+
+    if (!infile) {
+        cout << "No existing transactions file found. Starting with empty list.\n";
+        return;
+    }
+
+    string line;
+
+    try {
+
+        while (getline(infile, line)) {
+
+            if (line.size() == 0) continue;
+
+            string decrypted = encryptDecrypt(line, ENCRYPTION_KEY);
+
+            stringstream ss(decrypted);
+
+            string d, c, desc, amountStr;
+
+            getline(ss, d, '|');
+            getline(ss, c, '|');
+            getline(ss, desc, '|');
+            getline(ss, amountStr, '|');
+
+            float amount = 0;
+
+            try {
+                amount = stof(amountStr);
+            } catch (...) {
+                cout << "Skipping invalid transaction line in file.\n";
+                continue;
+            }
+
+            Transaction t(d, c, desc, amount);
+
+            Node *newNode = new Node;
+            newNode->data = t;
+            newNode->next = NULL;
+
+            if (head == NULL) {
+                head = newNode;
+            } else {
+                Node *tmp = head;
+                while (tmp->next != NULL) tmp = tmp->next;
+
+                tmp->next = newNode;
+            }
+
+            count++;
+
+            pushRecent(recent, t);  // rebuild recent list
+        }
+
+        infile.close();
+
+    } catch (exception &e) {
+        cout << "Error while reading transactions file: " << e.what() << endl;
     }
 }
