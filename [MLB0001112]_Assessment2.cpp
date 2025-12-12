@@ -2,13 +2,15 @@
 #include <string>
 #include <sstream>
 #include <functional>
+#include <fstream>
 using namespace std;
 
 const int MAX_TRANSACTIONS = 100;
 const int MAX_USERS = 10;
+const string ENCRYPTION_KEY = "mySecretKey123";
 
 
-// Transaction Class (same as base code) 
+//  Transaction Class (same as base code) 
 class Transaction {
 private:
     string date;
@@ -43,7 +45,7 @@ public:
 };
 
 
-// ===== User Struct for Authentication =====
+//  User Struct for Authentication 
 struct User {
     string username;
     string passwordHash;
@@ -51,7 +53,7 @@ struct User {
 };
 
 
-// Function Prototypes 
+//  Function Prototypes 
 void showMenu();
 int getValidMenuChoice(int min, int max);
 
@@ -66,6 +68,11 @@ void initUsers(User users[], int &userCount);
 User* login(User users[], int userCount);
 string hashPassword(const string &password);
 
+// File handling
+string encryptDecrypt(const string &text, const string &key);
+void saveTransactionsToFile(Transaction arr[], int count);
+void loadTransactionsFromFile(Transaction arr[], int &count);
+
 
 //  MAIN 
 int main() {
@@ -78,7 +85,7 @@ int main() {
     User* currentUser = NULL;
     int attempts = 0;
 
-    cout << "Welcome to Personal Finance Tracker (Auth Version)\n";
+    cout << "Welcome to Personal Finance Tracker (Auth + File Version)\n";
 
     while (attempts < 3 && currentUser == NULL) {
         currentUser = login(users, userCount);
@@ -99,9 +106,12 @@ int main() {
          << " (role: " << currentUser->role << ")\n";
 
 
-    //  Original Assessment 2 Program Starts Here 
+    //  Transactions (array-based, with file persistence) 
     Transaction transactions[MAX_TRANSACTIONS];
     int transactionCount = 0;
+
+    loadTransactionsFromFile(transactions, transactionCount);
+
     int choice;
 
     do 
@@ -113,6 +123,7 @@ int main() {
         {
             case 1:
                 addTransaction(transactions, transactionCount);
+                saveTransactionsToFile(transactions, transactionCount);
                 break;
 
             case 2:
@@ -120,6 +131,7 @@ int main() {
                     cout << "Only admins can delete transactions.\n";
                 } else {
                     deleteTransaction(transactions, transactionCount);
+                    saveTransactionsToFile(transactions, transactionCount);
                 }
                 break;
 
@@ -147,7 +159,7 @@ int main() {
 
 
 
-//  Menu + Validation 
+//  Menu + Validation
 void showMenu() {
     cout << "\n==== Personal Finance Tracker ====\n";
     cout << "1 - Add new transaction\n";
@@ -177,7 +189,7 @@ int getValidMenuChoice(int min, int max) {
 
 
 
-// AUTHENTICATION FUNCTIONS 
+//  AUTHENTICATION FUNCTIONS 
 
 string hashPassword(const string &password) {
     hash<string> hasher;
@@ -227,7 +239,93 @@ User* login(User users[], int userCount) {
 
 
 
-// Original Assessment 2 Functionalities 
+//  FILE HANDLING FUNCTIONS 
+
+string encryptDecrypt(const string &text, const string &key) {
+
+    string result = text;
+
+    for (size_t i = 0; i < text.size(); i++) {
+        result[i] = text[i] ^ key[i % key.size()];
+    }
+
+    return result;
+}
+
+void saveTransactionsToFile(Transaction arr[], int count) {
+
+    ofstream outfile("transactions.txt");
+
+    if (!outfile) {
+        cout << "Error opening transactions.txt for writing.\n";
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+
+        stringstream ss;
+        ss << arr[i].getAmount();
+
+        string line = arr[i].getDate() + "|" +
+                      arr[i].getCategory() + "|" +
+                      arr[i].getDescription() + "|" +
+                      ss.str();
+
+        string encrypted = encryptDecrypt(line, ENCRYPTION_KEY);
+
+        outfile << encrypted << "\n";
+    }
+
+    outfile.close();
+}
+
+void loadTransactionsFromFile(Transaction arr[], int &count) {
+
+    ifstream infile("transactions.txt");
+
+    if (!infile) {
+        cout << "No existing transactions file found. Starting empty.\n";
+        return;
+    }
+
+    string line;
+
+    while (getline(infile, line) && count < MAX_TRANSACTIONS) {
+
+        if (line.size() == 0) continue;
+
+        string decrypted = encryptDecrypt(line, ENCRYPTION_KEY);
+
+        stringstream ss(decrypted);
+
+        string d, c, desc, amountStr;
+
+        getline(ss, d, '|');
+        getline(ss, c, '|');
+        getline(ss, desc, '|');
+        getline(ss, amountStr, '|');
+
+        float amount = 0;
+
+        try {
+            amount = stof(amountStr);
+        } catch (...) {
+            cout << "Skipping invalid transaction line in file.\n";
+            continue;
+        }
+
+        Transaction t(d, c, desc, amount);
+
+        arr[count] = t;
+        count++;
+    }
+
+    infile.close();
+}
+
+
+
+// Original Assessment 2 Functionalities (array-based) 
 
 // Add transaction
 void addTransaction(Transaction arr[], int &count) {
